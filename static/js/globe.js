@@ -1,37 +1,43 @@
 /**
  * Globe.gl Visualization
- * Renders artist locations on a 3D globe with floating pin markers
+ * Renders artist locations on a 3D globe with aggregated location markers
  */
 
 let globe = null;
 let autoRotate = true;
 let rotationTimeout = null;
 
-// Color scale based on artist popularity
-function getMarkerColor(popularity) {
-    // Spotify popularity is 0-100
-    if (popularity >= 80) return '#1DB954'; // Spotify green - very popular
-    if (popularity >= 60) return '#1ed760'; // Light green
-    if (popularity >= 40) return '#ffc107'; // Yellow
-    if (popularity >= 20) return '#ff9800'; // Orange
-    return '#ff5722'; // Red-orange - less known
-}
+/**
+ * Color based on artist count at location
+ * More artists = greener, fewer = redder
+ */
+function getLocationColor(count, maxCount) {
+    // Interpolate from red (1 artist) to green (max artists)
+    const ratio = Math.min((count - 1) / Math.max(maxCount - 1, 1), 1);
 
-// Size based on popularity
-function getMarkerSize(popularity) {
-    return 0.4 + (popularity / 100) * 0.4; // 0.4 to 0.8
+    // Red: #ff5722, Yellow: #ffc107, Green: #1DB954
+    if (ratio < 0.5) {
+        // Red to yellow
+        const r = 255;
+        const g = Math.round(87 + (193 - 87) * (ratio * 2));
+        const b = Math.round(34 + (7 - 34) * (ratio * 2));
+        return `rgb(${r}, ${g}, ${b})`;
+    } else {
+        // Yellow to green
+        const t = (ratio - 0.5) * 2;
+        const r = Math.round(255 - (255 - 29) * t);
+        const g = Math.round(193 - (193 - 185) * t);
+        const b = Math.round(7 + (84 - 7) * t);
+        return `rgb(${r}, ${g}, ${b})`;
+    }
 }
 
 /**
- * Group artists by location and stack vertically
- * Artists within ~50km of each other are considered same location
+ * Group artists by location into aggregated markers
  */
-function processArtistsForDisplay(artists) {
+function aggregateArtistsByLocation(artists) {
     const PROXIMITY_THRESHOLD = 0.5; // ~50km in degrees
-    const BASE_ALTITUDE = 0.06; // Base floating height
-    const STACK_INCREMENT = 0.04; // Height between stacked markers
 
-    // Group artists by proximity
     const groups = [];
     const processed = new Set();
 
@@ -55,31 +61,34 @@ function processArtistsForDisplay(artists) {
         groups.push(group);
     });
 
-    // Assign altitudes for stacking
-    const result = [];
-    groups.forEach(group => {
-        // Sort by popularity (most popular at top)
+    // Find max count for color scaling
+    const maxCount = Math.max(...groups.map(g => g.length));
+
+    // Create aggregated location data
+    return groups.map(group => {
+        // Sort by popularity
         group.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
 
-        group.forEach((artist, stackIndex) => {
-            result.push({
-                ...artist,
-                lat: artist.location_coord[0],
-                lng: artist.location_coord[1],
-                altitude: BASE_ALTITUDE + (stackIndex * STACK_INCREMENT),
-                stackIndex,
-                groupSize: group.length
-            });
-        });
-    });
+        // Use first artist's coords (they're all close anyway)
+        const lat = group[0].location_coord[0];
+        const lng = group[0].location_coord[1];
 
-    return result;
+        return {
+            lat,
+            lng,
+            artists: group,
+            count: group.length,
+            maxCount,
+            // Use most common location name, or first one
+            locationName: group[0].location_name || 'Unknown',
+            // Average popularity for reference
+            avgPopularity: group.reduce((sum, a) => sum + (a.popularity || 0), 0) / group.length
+        };
+    });
 }
 
 /**
  * Initialize the globe visualization
- * @param {HTMLElement} container - DOM element to render the globe in
- * @param {Array} artists - Array of artist objects with location data
  */
 function initGlobe(container, artists) {
     // Filter artists with valid coordinates
@@ -91,15 +100,8 @@ function initGlobe(container, artists) {
         a.location_coord[1] !== 0
     );
 
-    // Process for stacking overlapping markers
-    const processedArtists = processArtistsForDisplay(validArtists);
-
-    // Create ring data for ground markers (shows where pins connect to surface)
-    const ringData = processedArtists.filter(a => a.stackIndex === 0).map(a => ({
-        lat: a.lat,
-        lng: a.lng,
-        color: getMarkerColor(a.popularity)
-    }));
+    // Aggregate by location
+    const locations = aggregateArtistsByLocation(validArtists);
 
     // Create the globe
     globe = Globe()
@@ -110,37 +112,12 @@ function initGlobe(container, artists) {
         .atmosphereColor('#3a228a')
         .atmosphereAltitude(0.25)
 
-        // Rings at base of pins (ground markers)
-        .ringsData(ringData)
-        .ringLat('lat')
-        .ringLng('lng')
-        .ringColor('color')
-        .ringMaxRadius(0.8)
-        .ringPropagationSpeed(0)
-        .ringRepeatPeriod(0)
-        .ringAltitude(0.001)
-
-        // Floating point markers
-        .pointsData(processedArtists)
-        .pointLat('lat')
-        .pointLng('lng')
-        .pointAltitude('altitude')
-        .pointRadius(d => getMarkerSize(d.popularity))
-        .pointColor(d => getMarkerColor(d.popularity))
-        .pointLabel(d => createTooltip(d))
-        .onPointClick(handleArtistClick)
-        .onPointHover(handleArtistHover)
-
-        // Labels float above the points
-        .labelsData(processedArtists)
-        .labelLat('lat')
-        .labelLng('lng')
-        .labelText('name')
-        .labelSize(0.4)
-        .labelDotRadius(0)
-        .labelColor(() => 'rgba(255, 255, 255, 0.9)')
-        .labelResolution(2)
-        .labelAltitude(d => d.altitude + 0.02)
+        // HTML badge markers (2D, always face camera)
+        .htmlElementsData(locations)
+        .htmlLat('lat')
+        .htmlLng('lng')
+        .htmlAltitude(0.01)
+        .htmlElement(d => createBadgeMarker(d))
         (container);
 
     // Set initial view
@@ -149,10 +126,9 @@ function initGlobe(container, artists) {
     // Auto-rotation
     startAutoRotate();
 
-    // Pause rotation on interaction
-    container.addEventListener('mousedown', pauseAutoRotate);
-    container.addEventListener('touchstart', pauseAutoRotate);
-    container.addEventListener('wheel', pauseAutoRotate);
+    // Stop rotation permanently on click
+    container.addEventListener('mousedown', stopAutoRotate);
+    container.addEventListener('touchstart', stopAutoRotate);
 
     // Handle window resize
     window.addEventListener('resize', () => {
@@ -164,40 +140,92 @@ function initGlobe(container, artists) {
 }
 
 /**
- * Create tooltip HTML for an artist
+ * Create HTML badge marker (pin with number)
  */
-function createTooltip(artist) {
-    const stackInfo = artist.groupSize > 1
-        ? `<span class="stack-info">${artist.groupSize} artists from this area</span>`
-        : '';
-    return `
-        <div class="artist-tooltip">
-            ${artist.image ? `<img src="${artist.image}" alt="${artist.name}" />` : ''}
-            <div class="tooltip-content">
-                <strong>${artist.name}</strong>
-                <span class="location">${artist.location_name || 'Unknown location'}</span>
-                <span class="popularity">Popularity: ${artist.popularity}/100</span>
-                ${artist.genres?.length ? `<span class="genres">${artist.genres.slice(0, 3).join(', ')}</span>` : ''}
-                ${stackInfo}
+function createBadgeMarker(location) {
+    const el = document.createElement('div');
+    el.className = 'globe-badge';
+    el.style.pointerEvents = 'auto';
+
+    const color = getLocationColor(location.count, location.maxCount);
+
+    // Build artist list HTML for tooltip
+    const artistListHtml = location.artists.map(a => `
+        <div class="tooltip-artist">
+            ${a.image ? `<img src="${a.image}" alt="${a.name}" />` : '<div class="no-img"></div>'}
+            <span class="name">${a.name}</span>
+            <span class="pop">${a.popularity || 0}</span>
+        </div>
+    `).join('');
+
+    // Create the badge structure with embedded tooltip
+    el.innerHTML = `
+        <div class="badge-pin" style="background: ${color}; border-color: ${color};">
+            <span class="badge-count">${location.count}</span>
+        </div>
+        <div class="badge-label">${truncateNames(location.artists)}</div>
+        <div class="badge-tooltip" popover>
+            <div class="tooltip-header">
+                <strong>${location.locationName}</strong>
+                <span class="artist-count">${location.count} artist${location.count > 1 ? 's' : ''}</span>
+            </div>
+            <div class="tooltip-artists">
+                ${artistListHtml}
             </div>
         </div>
     `;
+
+    // Get tooltip element
+    const tooltip = el.querySelector('.badge-tooltip');
+
+    // Position tooltip on mouse move
+    el.addEventListener('mousemove', (e) => {
+        if (tooltip) {
+            tooltip.style.left = (e.clientX + 8) + 'px';
+            tooltip.style.top = (e.clientY + 8) + 'px';
+        }
+    });
+
+    // Show/hide tooltip on hover
+    el.addEventListener('mouseenter', (e) => {
+        if (tooltip) {
+            tooltip.style.left = (e.clientX + 8) + 'px';
+            tooltip.style.top = (e.clientY + 8) + 'px';
+            tooltip.showPopover();
+            tooltip.style.opacity = '1';
+            tooltip.style.visibility = 'visible';
+        }
+    });
+
+    el.addEventListener('mouseleave', () => {
+        if (tooltip) {
+            tooltip.style.opacity = '0';
+            tooltip.style.visibility = 'hidden';
+        }
+    });
+
+    // Add click handler
+    el.addEventListener('click', () => {
+        if (location.artists.length === 1 && location.artists[0].spotifyUrl) {
+            window.open(location.artists[0].spotifyUrl, '_blank');
+        }
+    });
+
+    return el;
 }
 
 /**
- * Handle click on an artist marker
+ * Truncate artist names for label
  */
-function handleArtistClick(artist) {
-    if (artist && artist.spotifyUrl) {
-        window.open(artist.spotifyUrl, '_blank');
+function truncateNames(artists) {
+    const names = artists.map(a => a.name);
+    if (names.length === 1) {
+        return names[0];
+    } else if (names.length === 2) {
+        return names.join(', ');
+    } else {
+        return `${names[0]}, ${names[1]} +${names.length - 2}`;
     }
-}
-
-/**
- * Handle hover on an artist marker
- */
-function handleArtistHover(artist) {
-    document.body.style.cursor = artist ? 'pointer' : 'default';
 }
 
 /**
@@ -223,19 +251,14 @@ function startAutoRotate() {
 }
 
 /**
- * Pause auto-rotation temporarily
+ * Stop auto-rotation permanently
  */
-function pauseAutoRotate() {
+function stopAutoRotate() {
     autoRotate = false;
-
-    // Resume after 3 seconds of inactivity
     if (rotationTimeout) {
         clearTimeout(rotationTimeout);
+        rotationTimeout = null;
     }
-    rotationTimeout = setTimeout(() => {
-        autoRotate = true;
-        startAutoRotate();
-    }, 3000);
 }
 
 /**
@@ -244,13 +267,13 @@ function pauseAutoRotate() {
 function flyToArtist(artist) {
     if (!globe || !artist.location_coord) return;
 
-    pauseAutoRotate();
+    stopAutoRotate();
 
     globe.pointOfView({
         lat: artist.location_coord[0],
         lng: artist.location_coord[1],
         altitude: 1.5
-    }, 1000); // 1 second animation
+    }, 1000);
 }
 
 /**
@@ -265,17 +288,9 @@ function updateGlobeData(artists) {
         a.location_coord[1] !== 0
     );
 
-    const processedArtists = processArtistsForDisplay(validArtists);
+    const locations = aggregateArtistsByLocation(validArtists);
 
-    const ringData = processedArtists.filter(a => a.stackIndex === 0).map(a => ({
-        lat: a.lat,
-        lng: a.lng,
-        color: getMarkerColor(a.popularity)
-    }));
-
-    globe.ringsData(ringData);
-    globe.pointsData(processedArtists);
-    globe.labelsData(processedArtists);
+    globe.htmlElementsData(locations);
 }
 
 /**
@@ -314,6 +329,6 @@ window.GlobeViz = {
     updateGlobeData,
     setGlobeTheme,
     destroyGlobe,
-    pauseAutoRotate,
+    stopAutoRotate,
     startAutoRotate
 };

@@ -318,56 +318,146 @@ html, body {
 
 .fade.faded {
     opacity: 0.1;
+}
+
+/* Globe badge markers - only badges get pointer events, not their containers */
+.globe-badge {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: pointer;
+    transform: translate(-50%, -100%);
+    pointer-events: auto;
+}
+
+.globe-badge .badge-pin {
+    width: 28px;
+    height: 28px;
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+    border: 2px solid;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.globe-badge .badge-count {
+    transform: rotate(45deg);
+    font-size: 12px;
+    font-weight: bold;
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.globe-badge .badge-label {
+    margin-top: 4px;
+    font-size: 10px;
+    font-weight: 500;
+    color: #fff;
+    white-space: nowrap;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow:
+        -1px -1px 0 #000,
+        1px -1px 0 #000,
+        -1px 1px 0 #000,
+        1px 1px 0 #000;
+}
+
+.globe-badge:hover {
+    z-index: 9999;
+}
+
+.globe-badge:hover .badge-pin {
+    transform: rotate(-45deg) scale(1.15);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+}
+
+/* Badge tooltip (CSS-based, shows on hover) */
+.globe-badge .badge-tooltip {
+    position: fixed;
+    background: rgba(0, 0, 0, 0.95);
+    border-radius: 8px;
+    padding: 12px;
+    min-width: 200px;
+    max-width: 280px;
+    max-height: 300px;
+    overflow-y: auto;
+    z-index: 10000;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
     pointer-events: none;
 }
 
-/* Tooltip styles (for Globe.gl) */
-.artist-tooltip {
-    background: rgba(0, 0, 0, 0.9);
-    border-radius: 8px;
-    padding: 10px;
-    max-width: 200px;
+.globe-badge:hover .badge-tooltip {
+    opacity: 1;
+    visibility: visible;
+}
+
+.badge-tooltip .tooltip-header {
     display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #333;
     gap: 10px;
 }
 
-.artist-tooltip img {
-    width: 50px;
-    height: 50px;
-    border-radius: 50%;
-    object-fit: cover;
-}
-
-.artist-tooltip .tooltip-content {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.artist-tooltip strong {
+.badge-tooltip .tooltip-header strong {
     font-size: 0.9rem;
+    color: #fff;
 }
 
-.artist-tooltip .location {
-    font-size: 0.75rem;
-    color: #888;
-}
-
-.artist-tooltip .popularity {
+.badge-tooltip .artist-count {
     font-size: 0.7rem;
-    color: #1DB954;
-}
-
-.artist-tooltip .genres {
-    font-size: 0.7rem;
-    color: #666;
-}
-
-.artist-tooltip .stack-info {
-    font-size: 0.65rem;
     color: #1DB954;
     font-style: italic;
-    margin-top: 2px;
+    white-space: nowrap;
+}
+
+.badge-tooltip .tooltip-artists {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.badge-tooltip .tooltip-artist {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.badge-tooltip .tooltip-artist img {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.badge-tooltip .tooltip-artist .no-img {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: #333;
+    flex-shrink: 0;
+}
+
+.badge-tooltip .tooltip-artist .name {
+    flex: 1;
+    font-size: 0.8rem;
+    color: #fff;
+}
+
+.badge-tooltip .tooltip-artist .pop {
+    font-size: 0.7rem;
+    color: #1DB954;
 }
 
 /* Scrollbar styling */

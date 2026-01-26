@@ -104,13 +104,19 @@
                 // Hide loading overlay
                 hideLoading();
 
-                // Click anywhere to fade UI elements
-                document.body.addEventListener('click', (e) => {
-                    if (!e.target.closest('.sidebar') && !e.target.closest('.controls')) {
-                        document.querySelectorAll('.fade').forEach(el => {
-                            el.classList.toggle('faded');
-                        });
-                    }
+                // Fade UI elements when hovering over the globe vs UI
+                const fadeElements = document.querySelectorAll('.fade');
+
+                // Fade out UI when mouse enters globe area
+                container.addEventListener('mouseenter', () => {
+                    fadeElements.forEach(el => el.classList.add('faded'));
+                });
+
+                // Show UI when mouse enters any UI element
+                fadeElements.forEach(el => {
+                    el.addEventListener('mouseenter', () => {
+                        fadeElements.forEach(f => f.classList.remove('faded'));
+                    });
                 });
 
             } catch (error) {
