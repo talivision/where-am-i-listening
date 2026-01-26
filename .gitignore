@@ -16,6 +16,9 @@ notebook/static/built/
 notebook/static/*/js/main.min.js*
 notebook/static/lab/*bundle.js
 node_modules
+.wrangler
+package-lock.json
+*.pem
 *.py[co]
 __pycache__
 *.egg-info

@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Where Am I Listening?</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="icon" type="image/x-icon" href="img/favicon.ico">
+    <!-- Globe.gl -->
+    <script src="https://unpkg.com/globe.gl"></script>
+</head>
+<body class="globe-page">
+    <h1 class="title fade">Where Am I Listening?</h1>
+
+    <!-- Loading overlay -->
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="spinner"></div>
+        <p id="loading-status">Loading your top artists...</p>
+        <div id="progress-bar" class="progress-bar">
+            <div id="progress-fill" class="progress-fill"></div>
+        </div>
+        <p id="loading-detail" class="loading-detail"></p>
+    </div>
+
+    <!-- Globe container -->
+    <div id="globe-container"></div>
+
+    <!-- Controls -->
+    <div class="controls fade">
+        <button id="theme-toggle" class="control-btn" title="Toggle theme">
+            <span id="theme-icon">🌙</span>
+        </button>
+        <button id="logout-btn" class="control-btn" title="Logout">
+            <span>🚪</span>
+        </button>
+    </div>
+
+    <!-- Artist list sidebar -->
+    <div id="artist-sidebar" class="sidebar fade">
+        <h3>Your Top Artists</h3>
+        <div id="artist-list"></div>
+    </div>
+
+    <!-- Stats -->
+    <div id="stats" class="stats fade" style="display: none;">
+        <p><span id="artist-count">0</span> artists from <span id="country-count">0</span> countries</p>
+    </div>
+
+    <script src="js/auth.js"></script>
+    <script src="js/spotify.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/globe.js"></script>
+    <script>
+        let isDarkTheme = true;
+        let allArtists = [];
+
+        async function init() {
+            // Check if logged in
+            if (!window.SpotifyAuth.isLoggedIn()) {
+                window.location.href = 'index.html';
+                return;
+            }
+
+            try {
+                updateStatus('Fetching your top artists from Spotify...');
+
+                // Get access token
+                const token = await window.SpotifyAuth.getValidToken();
+
+                // Fetch top artists
+                const rawArtists = await window.SpotifyAPI.fetchTopArtists(token, 50);
+                const artists = window.SpotifyAPI.extractArtistData(rawArtists);
+
+                updateStatus(`Found ${artists.length} artists. Fetching locations...`);
+
+                // Fetch locations - try worker first, fallback to direct
+                let artistsWithLocations;
+                try {
+                    artistsWithLocations = await window.LocationAPI.fetchArtistLocations(
+                        artists,
+                        handleProgress
+                    );
+                } catch (e) {
+                    console.warn('Worker failed, using direct fetch:', e);
+                    updateStatus('Using direct lookup (this may take a while)...');
+                    artistsWithLocations = await window.LocationAPI.fetchLocationsDirectly(
+                        artists,
+                        handleProgress
+                    );
+                }
+
+                allArtists = artistsWithLocations;
+
+                // Initialize globe
+                const container = document.getElementById('globe-container');
+                window.GlobeViz.initGlobe(container, artistsWithLocations);
+
+                // Populate sidebar
+                populateSidebar(artistsWithLocations);
+
+                // Update stats
+                updateStats(artistsWithLocations);
+
+                // Hide loading overlay
+                hideLoading();
+
+                // Click anywhere to fade UI elements
+                document.body.addEventListener('click', (e) => {
+                    if (!e.target.closest('.sidebar') && !e.target.closest('.controls')) {
+                        document.querySelectorAll('.fade').forEach(el => {
+                            el.classList.toggle('faded');
+                        });
+                    }
+                });
+
+            } catch (error) {
+                console.error('Initialization error:', error);
+                updateStatus(`Error: ${error.message}`);
+
+                if (error.message.includes('401') || error.message.includes('token')) {
+                    window.SpotifyAuth.logout();
+                    setTimeout(() => {
+                        window.location.href = 'index.html';
+                    }, 2000);
+                }
+            }
+        }
+
+        function updateStatus(message) {
+            document.getElementById('loading-status').textContent = message;
+        }
+
+        function handleProgress(progress) {
+            const progressFill = document.getElementById('progress-fill');
+            const loadingDetail = document.getElementById('loading-detail');
+
+            if (progress.type === 'cache') {
+                updateStatus(`Found ${progress.cached} cached, fetching ${progress.remaining} more...`);
+                progressFill.style.width = `${(progress.cached / (progress.cached + progress.remaining)) * 100}%`;
+            } else if (progress.type === 'worker-mode') {
+                loadingDetail.textContent = 'Using location worker for fast parallel lookups.';
+            } else if (progress.type === 'progress') {
+                updateStatus(`Looking up: ${progress.artist} (${progress.current}/${progress.total})`);
+                progressFill.style.width = `${(progress.current / progress.total) * 100}%`;
+            } else if (progress.type === 'direct-mode') {
+                loadingDetail.textContent = 'Using direct MusicBrainz lookup (1 request/sec rate limit). Results are cached for faster future loads.';
+            } else if (progress.type === 'complete') {
+                updateStatus('All locations loaded!');
+                progressFill.style.width = '100%';
+                loadingDetail.textContent = '';
+            } else if (progress.type === 'error') {
+                console.warn('Progress error:', progress.error);
+            }
+        }
+
+        function hideLoading() {
+            const overlay = document.getElementById('loading-overlay');
+            overlay.classList.add('fade-out');
+            setTimeout(() => {
+                overlay.style.display = 'none';
+            }, 500);
+        }
+
+        function populateSidebar(artists) {
+            const list = document.getElementById('artist-list');
+            list.innerHTML = '';
+
+            artists.forEach(artist => {
+                const item = document.createElement('div');
+                item.className = 'artist-item';
+                item.innerHTML = `
+                    ${artist.image ? `<img src="${artist.image}" alt="${artist.name}">` : '<div class="no-image"></div>'}
+                    <div class="artist-info">
+                        <span class="artist-name">${artist.name}</span>
+                        <span class="artist-location">${artist.location_name || 'Unknown'}</span>
+                    </div>
+                `;
+                item.addEventListener('click', () => {
+                    window.GlobeViz.flyToArtist(artist);
+                });
+                list.appendChild(item);
+            });
+        }
+
+        function updateStats(artists) {
+            const validArtists = artists.filter(a => a.location_coord);
+            const countries = new Set(
+                artists
+                    .filter(a => a.location_name && a.location_name !== 'Unknown')
+                    .map(a => {
+                        const parts = a.location_name.split(',');
+                        return parts[parts.length - 1].trim();
+                    })
+            );
+
+            document.getElementById('artist-count').textContent = validArtists.length;
+            document.getElementById('country-count').textContent = countries.size;
+            document.getElementById('stats').style.display = 'block';
+        }
+
+        // Theme toggle
+        document.getElementById('theme-toggle').addEventListener('click', (e) => {
+            e.stopPropagation();
+            isDarkTheme = !isDarkTheme;
+            window.GlobeViz.setGlobeTheme(isDarkTheme ? 'dark' : 'light');
+            document.getElementById('theme-icon').textContent = isDarkTheme ? '🌙' : '☀️';
+        });
+
+        // Logout
+        document.getElementById('logout-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            window.SpotifyAuth.logout();
+            window.location.href = 'index.html';
+        });
+
+        // Initialize on load
+        init();
+    </script>
+</body>
+</html>
