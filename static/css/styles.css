@@ -291,6 +291,38 @@ html, body {
     text-overflow: ellipsis;
 }
 
+.artist-item.unknown {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.artist-item.unknown:hover {
+    background: transparent;
+}
+
+.musicbrainz-notice {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    text-align: center;
+    font-size: 0.75rem;
+    color: #888;
+}
+
+.musicbrainz-notice p {
+    margin: 0 0 0.5rem 0;
+}
+
+.musicbrainz-notice a {
+    color: #1DB954;
+    text-decoration: none;
+}
+
+.musicbrainz-notice a:hover {
+    text-decoration: underline;
+}
+
 /* Stats */
 .stats {
     position: fixed;
@@ -385,8 +417,6 @@ html, body {
     padding: 12px;
     min-width: 200px;
     max-width: 280px;
-    max-height: 300px;
-    overflow-y: auto;
     z-index: 10000;
     opacity: 0;
     visibility: hidden;
@@ -449,15 +479,154 @@ html, body {
     flex-shrink: 0;
 }
 
-.badge-tooltip .tooltip-artist .name {
+.badge-tooltip .tooltip-artist-info {
+    display: flex;
+    flex-direction: column;
     flex: 1;
+    min-width: 0;
+}
+
+.badge-tooltip .tooltip-artist .name {
     font-size: 0.8rem;
     color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.badge-tooltip .tooltip-artist .location {
+    font-size: 0.7rem;
+    color: #888;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .badge-tooltip .tooltip-artist .pop {
     font-size: 0.7rem;
     color: #1DB954;
+}
+
+/* Artist modal */
+.artist-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10001;
+    backdrop-filter: blur(4px);
+}
+
+.artist-modal-content {
+    background: rgba(30, 30, 30, 0.95);
+    border-radius: 12px;
+    padding: 1.5rem;
+    max-width: 400px;
+    max-height: 80vh;
+    overflow-y: auto;
+    position: relative;
+}
+
+.modal-close {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.75rem;
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+
+.modal-close:hover {
+    color: #fff;
+}
+
+#modal-artists {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.modal-artist {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    text-decoration: none;
+    color: inherit;
+    transition: background 0.2s ease;
+}
+
+.modal-artist:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.modal-artist.no-link {
+    pointer-events: none;
+}
+
+.modal-artist img {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.modal-artist .no-image {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: #333;
+    flex-shrink: 0;
+}
+
+.modal-artist-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-artist-name {
+    font-size: 1rem;
+    font-weight: 500;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.modal-artist-location {
+    font-size: 0.8rem;
+    color: #888;
+}
+
+.modal-artist .spotify-icon {
+    width: 24px;
+    height: 24px;
+    color: #1DB954;
+    flex-shrink: 0;
+    opacity: 0.7;
+}
+
+.modal-artist:hover .spotify-icon {
+    opacity: 1;
+}
+
+.modal-artist.no-link .spotify-icon {
+    display: none;
 }
 
 /* Scrollbar styling */

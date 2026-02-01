@@ -12,7 +12,7 @@ const SPOTIFY_API_BASE = 'https://api.spotify.com/v1';
  * @param {string} timeRange - Time range: short_term, medium_term, long_term
  * @returns {Promise<Array>} Array of artist objects
  */
-async function fetchTopArtists(token, limit = 50, timeRange = 'medium_term') {
+export async function fetchTopArtists(token, limit = 50, timeRange = 'medium_term') {
     const response = await fetch(
         `${SPOTIFY_API_BASE}/me/top/artists?limit=${limit}&time_range=${timeRange}`,
         {
@@ -40,7 +40,7 @@ async function fetchTopArtists(token, limit = 50, timeRange = 'medium_term') {
  * @param {string} token - Spotify access token
  * @returns {Promise<Object>} User profile object
  */
-async function fetchUserProfile(token) {
+export async function fetchUserProfile(token) {
     const response = await fetch(`${SPOTIFY_API_BASE}/me`, {
         headers: {
             'Authorization': `Bearer ${token}`
@@ -59,7 +59,7 @@ async function fetchUserProfile(token) {
  * @param {Array} artists - Array of Spotify artist objects
  * @returns {Array} Simplified artist data
  */
-function extractArtistData(artists) {
+export function extractArtistData(artists) {
     return artists.map(artist => ({
         id: artist.id,
         name: artist.name,
@@ -70,7 +70,7 @@ function extractArtistData(artists) {
     }));
 }
 
-// Export for use in other modules
+// Export for use in inline scripts via window
 window.SpotifyAPI = {
     fetchTopArtists,
     fetchUserProfile,

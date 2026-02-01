@@ -8,6 +8,13 @@
     <link rel="icon" type="image/x-icon" href="img/favicon.ico">
 </head>
 <body class="landing-page">
+    <!-- Redirect localhost to 127.0.0.1 so sessionStorage is on the same
+         origin as the Spotify OAuth redirect URI (which must use 127.0.0.1) -->
+    <script>
+        if (window.location.hostname === 'localhost') {
+            window.location.replace(window.location.href.replace('localhost', '127.0.0.1'));
+        }
+    </script>
     <div class="container">
         <h1 class="title">Where Am I Listening?</h1>
         <p class="subtitle">Discover where your favorite artists come from</p>
@@ -24,14 +31,14 @@
         </p>
     </div>
 
-    <script src="js/auth.js"></script>
-    <script>
+    <script type="module" src="js/auth.js"></script>
+    <script type="module">
         // Check if already logged in
         if (window.SpotifyAuth.isLoggedIn()) {
             window.location.href = 'globe.html';
         }
 
-        function handleLogin() {
+        window.handleLogin = function() {
             window.SpotifyAuth.login();
         }
     </script>
