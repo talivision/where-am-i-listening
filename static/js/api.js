@@ -212,56 +212,80 @@ async function fetchArtistLocations(artists, onProgress = null) {
 }
 
 /**
- * Fetch locations directly from browser (fallback, slower due to rate limits)
- * Uses shared location resolver module
+ * Fetch locations directly from browser (fallback)
+ * Uses shared location resolver module with rate-limited queues
+ * Processes artists in batches of 3 for ~3x speedup without overwhelming APIs
  */
 async function fetchLocationsDirectly(artists, onProgress = null) {
     const cache = getCache();
-    const results = [];
+    const results = new Array(artists.length);
+    let completed = 0;
+    const BATCH_SIZE = 3;
 
-    // Notify UI that we're using direct mode (slow)
+    // Notify UI that we're using direct mode
     if (onProgress) {
         onProgress({ type: 'direct-mode' });
     }
 
-    for (let i = 0; i < artists.length; i++) {
-        const artist = artists[i];
+    // Process in batches
+    for (let batchStart = 0; batchStart < artists.length; batchStart += BATCH_SIZE) {
+        const batch = artists.slice(batchStart, batchStart + BATCH_SIZE);
 
-        if (onProgress) {
-            onProgress({
-                type: 'progress',
-                current: i + 1,
-                total: artists.length,
-                artist: artist.name
-            });
-        }
+        const batchPromises = batch.map(async (artist, batchIndex) => {
+            const globalIndex = batchStart + batchIndex;
 
-        // Check cache
-        if (cache[artist.name]) {
-            results.push({
-                ...artist,
-                ...cache[artist.name]
-            });
-            continue;
-        }
+            // Check cache first
+            if (cache[artist.name]) {
+                completed++;
+                if (onProgress) {
+                    onProgress({
+                        type: 'progress',
+                        current: completed,
+                        total: artists.length,
+                        artist: artist.name
+                    });
+                }
+                return { index: globalIndex, result: { ...artist, ...cache[artist.name] } };
+            }
 
-        try {
-            // Use shared resolver
-            const locationData = await resolveArtistLocation(artist.name);
+            try {
+                // Use shared resolver (rate-limited internally)
+                const locationData = await resolveArtistLocation(artist.name);
 
-            saveToCache({ [artist.name]: locationData });
-            results.push({ ...artist, ...locationData });
+                saveToCache({ [artist.name]: locationData });
+                completed++;
+                if (onProgress) {
+                    onProgress({
+                        type: 'progress',
+                        current: completed,
+                        total: artists.length,
+                        artist: artist.name
+                    });
+                }
+                return { index: globalIndex, result: { ...artist, ...locationData } };
 
-            // Rate limit: wait between artists
-            await new Promise(resolve => setTimeout(resolve, 1100));
+            } catch (error) {
+                console.warn(`Failed to fetch location for ${artist.name}:`, error);
+                completed++;
+                if (onProgress) {
+                    onProgress({
+                        type: 'progress',
+                        current: completed,
+                        total: artists.length,
+                        artist: artist.name
+                    });
+                }
+                return {
+                    index: globalIndex,
+                    result: { ...artist, location_name: 'Unknown', location_coord: null }
+                };
+            }
+        });
 
-        } catch (error) {
-            console.warn(`Failed to fetch location for ${artist.name}:`, error);
-            results.push({
-                ...artist,
-                location_name: 'Unknown',
-                location_coord: null
-            });
+        // Wait for batch to complete before starting next
+        const batchResults = await Promise.all(batchPromises);
+        for (const { index, result } of batchResults) {
+            results[index] = result;
         }
     }
 
