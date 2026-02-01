@@ -15,6 +15,71 @@ export const USER_AGENT = 'WhereAmIListening/2.0 (https://github.com/talidemestr
 export const IS_PERSON_TYPE_ID = 'dd9886f2-1dfe-4270-97db-283f6839a666';
 
 // ---------------------------------------------------------------------------
+// Rate-limited queue for API requests
+// ---------------------------------------------------------------------------
+
+/**
+ * A queue that rate-limits requests to a service.
+ * Ensures minimum interval between requests while allowing concurrent callers.
+ */
+class RateLimitedQueue {
+    constructor(minIntervalMs) {
+        this.minInterval = minIntervalMs;
+        this.lastRequestTime = 0;
+        this.queue = [];
+        this.processing = false;
+    }
+
+    /**
+     * Execute a function respecting the rate limit.
+     * Multiple callers can await this - they'll be queued and processed in order.
+     */
+    async execute(fn) {
+        return new Promise((resolve, reject) => {
+            this.queue.push({ fn, resolve, reject });
+            this.processQueue();
+        });
+    }
+
+    async processQueue() {
+        if (this.processing || this.queue.length === 0) return;
+        this.processing = true;
+
+        while (this.queue.length > 0) {
+            const now = Date.now();
+            const elapsed = now - this.lastRequestTime;
+            const waitTime = Math.max(0, this.minInterval - elapsed);
+
+            if (waitTime > 0) {
+                await new Promise(r => setTimeout(r, waitTime));
+            }
+
+            const { fn, resolve, reject } = this.queue.shift();
+            this.lastRequestTime = Date.now();
+
+            try {
+                const result = await fn();
+                resolve(result);
+            } catch (error) {
+                reject(error);
+            }
+        }
+
+        this.processing = false;
+    }
+}
+
+// Service-specific rate limiters
+// MusicBrainz: 1 req/sec, Nominatim: 1 req/sec, Wikipedia/Wikidata: much higher
+const rateLimiters = {
+    musicbrainz: new RateLimitedQueue(1100),  // 1.1s to be safe
+    nominatim: new RateLimitedQueue(1100),
+    photon: new RateLimitedQueue(200),        // More lenient
+    wikipedia: new RateLimitedQueue(100),     // ~10 req/sec
+    wikidata: new RateLimitedQueue(100)
+};
+
+// ---------------------------------------------------------------------------
 // Area specificity helpers
 // ---------------------------------------------------------------------------
 
@@ -216,14 +281,16 @@ export async function fetchFromMusicBrainz(artistName) {
     try {
         // Use quoted search for better exact matching
         const encodedName = encodeURIComponent(`"${artistName}"`);
-        const response = await fetchWithRetry(
-            `https://musicbrainz.org/ws/2/artist/?query=artist:${encodedName}&limit=5&fmt=json`,
-            {
-                headers: {
-                    'User-Agent': USER_AGENT,
-                    'Accept': 'application/json'
+        const response = await rateLimiters.musicbrainz.execute(() =>
+            fetchWithRetry(
+                `https://musicbrainz.org/ws/2/artist/?query=artist:${encodedName}&limit=5&fmt=json`,
+                {
+                    headers: {
+                        'User-Agent': USER_AGENT,
+                        'Accept': 'application/json'
+                    }
                 }
-            }
+            )
         );
 
         if (!response || !response.ok) {
@@ -299,16 +366,16 @@ export async function resolveAreaContext(areaId, depth = 0) {
     if (depth > 5) return { country: null, subdivision: null };
 
     try {
-        await new Promise(r => setTimeout(r, 1100));
-
-        const response = await fetchWithRetry(
-            `https://musicbrainz.org/ws/2/area/${areaId}?inc=area-rels&fmt=json`,
-            {
-                headers: {
-                    'User-Agent': USER_AGENT,
-                    'Accept': 'application/json'
+        const response = await rateLimiters.musicbrainz.execute(() =>
+            fetchWithRetry(
+                `https://musicbrainz.org/ws/2/area/${areaId}?inc=area-rels&fmt=json`,
+                {
+                    headers: {
+                        'User-Agent': USER_AGENT,
+                        'Accept': 'application/json'
+                    }
                 }
-            }
+            )
         );
 
         if (!response || !response.ok) return { country: null, subdivision: null };
@@ -371,16 +438,16 @@ export async function resolveAreaCountry(areaId) {
  */
 export async function fetchLocationViaRelationships(mbid) {
     try {
-        await new Promise(r => setTimeout(r, 1100));
-
-        const response = await fetchWithRetry(
-            `https://musicbrainz.org/ws/2/artist/${mbid}?inc=artist-rels&fmt=json`,
-            {
-                headers: {
-                    'User-Agent': USER_AGENT,
-                    'Accept': 'application/json'
+        const response = await rateLimiters.musicbrainz.execute(() =>
+            fetchWithRetry(
+                `https://musicbrainz.org/ws/2/artist/${mbid}?inc=artist-rels&fmt=json`,
+                {
+                    headers: {
+                        'User-Agent': USER_AGENT,
+                        'Accept': 'application/json'
+                    }
                 }
-            }
+            )
         );
 
         if (!response || !response.ok) return null;
@@ -392,16 +459,16 @@ export async function fetchLocationViaRelationships(mbid) {
                 const personMbid = rel.artist.id;
                 console.log(`Following "is person" link to ${rel.artist.name} (${personMbid})`);
 
-                await new Promise(r => setTimeout(r, 1100));
-
-                const personResponse = await fetchWithRetry(
-                    `https://musicbrainz.org/ws/2/artist/${personMbid}?fmt=json`,
-                    {
-                        headers: {
-                            'User-Agent': USER_AGENT,
-                            'Accept': 'application/json'
+                const personResponse = await rateLimiters.musicbrainz.execute(() =>
+                    fetchWithRetry(
+                        `https://musicbrainz.org/ws/2/artist/${personMbid}?fmt=json`,
+                        {
+                            headers: {
+                                'User-Agent': USER_AGENT,
+                                'Accept': 'application/json'
+                            }
                         }
-                    }
+                    )
                 );
 
                 if (!personResponse || !personResponse.ok) return null;
@@ -441,9 +508,9 @@ export async function fetchFromWikipedia(searchQuery) {
     try {
         // Search Wikipedia for the page
         const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(searchQuery)}&format=json&origin=*`;
-        const searchResponse = await fetch(searchUrl, {
-            headers: { 'User-Agent': USER_AGENT }
-        });
+        const searchResponse = await rateLimiters.wikipedia.execute(() =>
+            fetch(searchUrl, { headers: { 'User-Agent': USER_AGENT } })
+        );
 
         if (!searchResponse.ok) return null;
         const searchData = await searchResponse.json();
@@ -454,9 +521,9 @@ export async function fetchFromWikipedia(searchQuery) {
 
         // Get the page content with infobox data via parse API
         const parseUrl = `https://en.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(pageTitle)}&prop=wikitext&section=0&format=json&origin=*`;
-        const parseResponse = await fetch(parseUrl, {
-            headers: { 'User-Agent': USER_AGENT }
-        });
+        const parseResponse = await rateLimiters.wikipedia.execute(() =>
+            fetch(parseUrl, { headers: { 'User-Agent': USER_AGENT } })
+        );
 
         if (!parseResponse.ok) return null;
         const parseData = await parseResponse.json();
@@ -508,14 +575,16 @@ export async function fetchFromWikidata(artistName) {
             LIMIT 1
         `;
 
-        const response = await fetch(
-            `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparql)}&format=json`,
-            {
-                headers: {
-                    'User-Agent': USER_AGENT,
-                    'Accept': 'application/sparql-results+json'
+        const response = await rateLimiters.wikidata.execute(() =>
+            fetch(
+                `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparql)}&format=json`,
+                {
+                    headers: {
+                        'User-Agent': USER_AGENT,
+                        'Accept': 'application/sparql-results+json'
+                    }
                 }
-            }
+            )
         );
 
         if (!response.ok) {
@@ -540,14 +609,16 @@ export async function fetchFromWikidata(artistName) {
             LIMIT 1
         `;
 
-        const bandResponse = await fetch(
-            `https://query.wikidata.org/sparql?query=${encodeURIComponent(bandSparql)}&format=json`,
-            {
-                headers: {
-                    'User-Agent': USER_AGENT,
-                    'Accept': 'application/sparql-results+json'
+        const bandResponse = await rateLimiters.wikidata.execute(() =>
+            fetch(
+                `https://query.wikidata.org/sparql?query=${encodeURIComponent(bandSparql)}&format=json`,
+                {
+                    headers: {
+                        'User-Agent': USER_AGENT,
+                        'Accept': 'application/sparql-results+json'
+                    }
                 }
-            }
+            )
         );
 
         if (bandResponse.ok) {
@@ -579,14 +650,16 @@ export async function fetchSubdivisionCapital(subdivisionName) {
             } LIMIT 1
         `;
 
-        const response = await fetch(
-            `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparql)}&format=json`,
-            {
-                headers: {
-                    'User-Agent': USER_AGENT,
-                    'Accept': 'application/sparql-results+json'
+        const response = await rateLimiters.wikidata.execute(() =>
+            fetch(
+                `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparql)}&format=json`,
+                {
+                    headers: {
+                        'User-Agent': USER_AGENT,
+                        'Accept': 'application/sparql-results+json'
+                    }
                 }
-            }
+            )
         );
 
         if (!response.ok) return null;
@@ -637,9 +710,11 @@ export async function geocodeLocation(locationName) {
  */
 export async function geocodeWithNominatim(query) {
     try {
-        const response = await fetch(
-            `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&accept-language=en`,
-            { headers: { 'User-Agent': USER_AGENT } }
+        const response = await rateLimiters.nominatim.execute(() =>
+            fetch(
+                `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&accept-language=en`,
+                { headers: { 'User-Agent': USER_AGENT } }
+            )
         );
         if (!response.ok) return null;
         const data = await response.json();
@@ -662,9 +737,11 @@ export async function geocodeWithNominatim(query) {
 export async function geocodeWithPhoton(query) {
     try {
         console.log(`Photon geocoding: ${query}`);
-        const response = await fetch(
-            `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1`,
-            { headers: { 'User-Agent': USER_AGENT } }
+        const response = await rateLimiters.photon.execute(() =>
+            fetch(
+                `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1`,
+                { headers: { 'User-Agent': USER_AGENT } }
+            )
         );
         console.log(`Photon response status: ${response.status}`);
         if (!response.ok) return null;

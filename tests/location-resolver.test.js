@@ -234,9 +234,15 @@ describe('verifyArtistMatch', () => {
         expect(verifyArtistMatch('Taylor Swift', 'Taylor Swift')).toBe(true);
     });
 
-    it('should return true for partial matches within threshold', () => {
-        expect(verifyArtistMatch('Taylor', 'Taylor Swift')).toBe(true);
-        expect(verifyArtistMatch('Swift', 'Taylor Swift')).toBe(true);
+    it('should require exact match for single-word names', () => {
+        // Single-word names must match exactly (prevents GREG → Greg Brown)
+        expect(verifyArtistMatch('Taylor', 'Taylor Swift')).toBe(false);
+        expect(verifyArtistMatch('Taylor', 'Taylor')).toBe(true);
+        expect(verifyArtistMatch('Prince', 'Prince')).toBe(true);
+    });
+
+    it('should allow partial matches for multi-word names', () => {
+        expect(verifyArtistMatch('Taylor Swift', 'Taylor Alison Swift')).toBe(true);
     });
 
     it('should return false for wrong artists', () => {
@@ -458,7 +464,8 @@ describe('fetchFromMusicBrainz', () => {
         });
 
         const result = await fetchFromMusicBrainz('Taylor Swift');
-        expect(result).toBeNull();
+        // Low score results are rejected, returns noMatch flag
+        expect(result).toEqual({ noMatch: true });
     });
 
     it('should skip name mismatches', async () => {
@@ -478,7 +485,8 @@ describe('fetchFromMusicBrainz', () => {
         });
 
         const result = await fetchFromMusicBrainz('Keli Holiday');
-        expect(result).toBeNull();
+        // Name mismatches are rejected, returns noMatch flag
+        expect(result).toEqual({ noMatch: true });
     });
 
     it('should return null on API error', async () => {
