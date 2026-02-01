@@ -329,17 +329,22 @@ export async function fetchFromMusicBrainz(artistName) {
             const areaType = artist.area?.type || null;
             const mbid = artist.id;
 
+            const artistType = artist.type || null; // "Person", "Group", etc.
+
             if (beginArea || area) {
-                return { beginArea, beginAreaId, beginAreaType, area, areaId, areaType, mbid, artistName: resultName };
+                return { beginArea, beginAreaId, beginAreaType, area, areaId, areaType, mbid, artistName: resultName, artistType };
             }
 
             // Exact match with no location — keep mbid for relationship following
-            // but mark as exact so we don't let fallbacks find a different person
+            // For Group types, allow fallbacks (band names are usually unique)
+            // For Person/null types, block fallbacks (risk of name collision)
             if (isExactMatch(artistName, resultName)) {
-                console.log(`Exact match for ${artistName} has no location, will try relationships only`);
+                const isGroup = artistType === 'Group';
+                console.log(`Exact match for ${artistName} (${artistType || 'unknown'}) has no location, will try relationships`);
                 return { beginArea: null, beginAreaId: null, beginAreaType: null,
                          area: null, areaId: null, areaType: null,
-                         mbid, artistName: resultName, exactMatch: true };
+                         mbid, artistName: resultName, artistType,
+                         exactMatch: !isGroup }; // Block fallbacks unless it's a Group
             }
         }
 
