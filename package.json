@@ -2,11 +2,15 @@
   "name": "where-am-i-listening",
   "version": "2.0.0",
   "description": "Visualize where your Spotify top artists come from on a 3D globe",
+  "type": "module",
   "scripts": {
     "dev": "npx http-server static -p 8080 -c-1 --cors",
     "dev:worker": "cd worker && npm run dev",
     "deploy:worker": "cd worker && npm run deploy",
-    "setup": "cd worker && npm install"
+    "setup": "cd worker && npm install",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "repository": {
     "type": "git",
@@ -15,6 +19,7 @@
   "author": "Tali Demestre",
   "license": "MIT",
   "devDependencies": {
-    "http-server": "^14.1.1"
+    "http-server": "^14.1.1",
+    "vitest": "^1.0.0"
   }
 }
