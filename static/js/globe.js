@@ -9,25 +9,23 @@ let rotationTimeout = null;
 
 /**
  * Color based on artist count at location
- * More artists = greener, fewer = redder
+ * Red -> Yellow -> Green ramp
  */
 function getLocationColor(count, maxCount) {
-    // Interpolate from red (1 artist) to green (max artists)
-    const ratio = Math.min((count - 1) / Math.max(maxCount - 1, 1), 1);
+    const ratio = 1 - Math.min((count - 1) / Math.max(maxCount - 1, 1), 1);
 
-    // Red: #ff5722, Yellow: #ffc107, Green: #1DB954
+    // Red (#e53935) -> Yellow (#fdd835) -> Green (#43a047)
     if (ratio < 0.5) {
-        // Red to yellow
-        const r = 255;
-        const g = Math.round(87 + (193 - 87) * (ratio * 2));
-        const b = Math.round(34 + (7 - 34) * (ratio * 2));
+        const t = ratio * 2;
+        const r = Math.round(229 + (253 - 229) * t);
+        const g = Math.round(57 + (216 - 57) * t);
+        const b = Math.round(53 + (53 - 53) * t);
         return `rgb(${r}, ${g}, ${b})`;
     } else {
-        // Yellow to green
         const t = (ratio - 0.5) * 2;
-        const r = Math.round(255 - (255 - 29) * t);
-        const g = Math.round(193 - (193 - 185) * t);
-        const b = Math.round(7 + (84 - 7) * t);
+        const r = Math.round(253 - (253 - 67) * t);
+        const g = Math.round(216 - (216 - 160) * t);
+        const b = Math.round(53 + (71 - 53) * t);
         return `rgb(${r}, ${g}, ${b})`;
     }
 }
@@ -90,7 +88,7 @@ function aggregateArtistsByLocation(artists) {
 /**
  * Initialize the globe visualization
  */
-function initGlobe(container, artists) {
+export function initGlobe(container, artists) {
     // Filter artists with valid coordinates
     const validArtists = artists.filter(a =>
         a.location_coord &&
@@ -147,16 +145,46 @@ function createBadgeMarker(location) {
     el.className = 'globe-badge';
     el.style.pointerEvents = 'auto';
 
+    // Pass wheel events through to the globe canvas for zooming
+    el.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        // Find the globe canvas and dispatch the wheel event to it
+        const canvas = document.querySelector('#globe-container canvas');
+        if (canvas) {
+            canvas.dispatchEvent(new WheelEvent('wheel', {
+                deltaX: e.deltaX,
+                deltaY: e.deltaY,
+                deltaZ: e.deltaZ,
+                deltaMode: e.deltaMode,
+                clientX: e.clientX,
+                clientY: e.clientY,
+                screenX: e.screenX,
+                screenY: e.screenY,
+                ctrlKey: e.ctrlKey,
+                shiftKey: e.shiftKey,
+                altKey: e.altKey,
+                metaKey: e.metaKey,
+                bubbles: true
+            }));
+        }
+    }, { passive: false });
+
     const color = getLocationColor(location.count, location.maxCount);
 
-    // Build artist list HTML for tooltip
+    // Build artist list HTML for tooltip (always show location as subtitle)
     const artistListHtml = location.artists.map(a => `
         <div class="tooltip-artist">
             ${a.image ? `<img src="${a.image}" alt="${a.name}" />` : '<div class="no-img"></div>'}
-            <span class="name">${a.name}</span>
-            <span class="pop">${a.popularity || 0}</span>
+            <div class="tooltip-artist-info">
+                <span class="name">${a.name}</span>
+                <span class="location">${a.location_name || 'Unknown'}</span>
+            </div>
         </div>
     `).join('');
+
+    // Build tooltip header
+    const headerHtml = `<span class="artist-count">${location.count} artist${location.count > 1 ? 's' : ''}</span>`;
 
     // Create the badge structure with embedded tooltip
     el.innerHTML = `
@@ -166,8 +194,7 @@ function createBadgeMarker(location) {
         <div class="badge-label">${truncateNames(location.artists)}</div>
         <div class="badge-tooltip" popover>
             <div class="tooltip-header">
-                <strong>${location.locationName}</strong>
-                <span class="artist-count">${location.count} artist${location.count > 1 ? 's' : ''}</span>
+                ${headerHtml}
             </div>
             <div class="tooltip-artists">
                 ${artistListHtml}
@@ -204,10 +231,10 @@ function createBadgeMarker(location) {
         }
     });
 
-    // Add click handler
+    // Add click handler - open modal with artist list
     el.addEventListener('click', () => {
-        if (location.artists.length === 1 && location.artists[0].spotifyUrl) {
-            window.open(location.artists[0].spotifyUrl, '_blank');
+        if (window.openArtistModal) {
+            window.openArtistModal(location.artists);
         }
     });
 
@@ -231,7 +258,7 @@ function truncateNames(artists) {
 /**
  * Start auto-rotation of the globe
  */
-function startAutoRotate() {
+export function startAutoRotate() {
     autoRotate = true;
 
     function rotate() {
@@ -253,7 +280,7 @@ function startAutoRotate() {
 /**
  * Stop auto-rotation permanently
  */
-function stopAutoRotate() {
+export function stopAutoRotate() {
     autoRotate = false;
     if (rotationTimeout) {
         clearTimeout(rotationTimeout);
@@ -264,7 +291,7 @@ function stopAutoRotate() {
 /**
  * Fly to a specific artist's location
  */
-function flyToArtist(artist) {
+export function flyToArtist(artist) {
     if (!globe || !artist.location_coord) return;
 
     stopAutoRotate();
@@ -279,7 +306,7 @@ function flyToArtist(artist) {
 /**
  * Update globe with new artist data
  */
-function updateGlobeData(artists) {
+export function updateGlobeData(artists) {
     if (!globe) return;
 
     const validArtists = artists.filter(a =>
@@ -296,7 +323,7 @@ function updateGlobeData(artists) {
 /**
  * Set globe theme (dark/light)
  */
-function setGlobeTheme(theme) {
+export function setGlobeTheme(theme) {
     if (!globe) return;
 
     if (theme === 'dark') {
@@ -311,7 +338,7 @@ function setGlobeTheme(theme) {
 /**
  * Destroy the globe instance
  */
-function destroyGlobe() {
+export function destroyGlobe() {
     if (globe) {
         globe._destructor && globe._destructor();
         globe = null;
@@ -322,7 +349,7 @@ function destroyGlobe() {
     }
 }
 
-// Export for use in other modules
+// Export for use in inline scripts via window
 window.GlobeViz = {
     initGlobe,
     flyToArtist,

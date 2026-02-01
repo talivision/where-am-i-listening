@@ -55,7 +55,7 @@ async function generateCodeChallenge(verifier) {
 /**
  * Initiate Spotify login with PKCE
  */
-async function login() {
+export async function login() {
     // Generate and store code verifier
     const codeVerifier = generateRandomString(64);
     sessionStorage.setItem('code_verifier', codeVerifier);
@@ -84,7 +84,7 @@ async function login() {
 /**
  * Handle OAuth callback - exchange code for token
  */
-async function handleCallback() {
+export async function handleCallback() {
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
     const state = params.get('state');
@@ -144,9 +144,9 @@ async function handleCallback() {
 /**
  * Refresh the access token
  */
-async function refreshToken() {
-    const refreshToken = sessionStorage.getItem('refresh_token');
-    if (!refreshToken) {
+export async function refreshToken() {
+    const storedRefreshToken = sessionStorage.getItem('refresh_token');
+    if (!storedRefreshToken) {
         throw new Error('No refresh token available');
     }
 
@@ -158,7 +158,7 @@ async function refreshToken() {
         body: new URLSearchParams({
             client_id: AUTH_CONFIG.clientId,
             grant_type: 'refresh_token',
-            refresh_token: refreshToken
+            refresh_token: storedRefreshToken
         })
     });
 
@@ -183,7 +183,7 @@ async function refreshToken() {
 /**
  * Get a valid access token, refreshing if necessary
  */
-async function getValidToken() {
+export async function getValidToken() {
     const token = sessionStorage.getItem('access_token');
     const expiry = sessionStorage.getItem('token_expiry');
 
@@ -202,14 +202,14 @@ async function getValidToken() {
 /**
  * Check if user is logged in
  */
-function isLoggedIn() {
+export function isLoggedIn() {
     return sessionStorage.getItem('access_token') !== null;
 }
 
 /**
  * Logout - clear all stored tokens
  */
-function logout() {
+export function logout() {
     sessionStorage.removeItem('access_token');
     sessionStorage.removeItem('refresh_token');
     sessionStorage.removeItem('token_expiry');
@@ -217,7 +217,7 @@ function logout() {
     sessionStorage.removeItem('oauth_state');
 }
 
-// Export for use in other modules
+// Export for use in inline scripts via window
 window.SpotifyAuth = {
     login,
     handleCallback,

@@ -3,6 +3,8 @@
  * Communicates with Cloudflare Worker backend to get artist locations
  */
 
+import { resolveArtistLocation } from '/shared/location-resolver.js';
+
 // Configuration - update this with your deployed Worker URL
 const API_CONFIG = {
     // Checks localStorage first, then tries local worker, then falls back to placeholder
@@ -128,60 +130,69 @@ async function fetchArtistLocations(artists, onProgress = null) {
         onProgress({ type: 'worker-mode' });
     }
 
-    // Fetch uncached artists from backend in batches for progress updates
-    const BATCH_SIZE = 10;
     const newLocations = {};
     let processed = 0;
 
+    // Build a lookup map for uncached artists by name
+    const uncachedByName = {};
+    for (const artist of uncached) {
+        uncachedByName[artist.name] = artist;
+    }
+
     try {
-        for (let i = 0; i < uncached.length; i += BATCH_SIZE) {
-            const batch = uncached.slice(i, i + BATCH_SIZE);
+        // Send all uncached artists in a single request — the worker
+        // streams results back as NDJSON so cached ones arrive instantly
+        const response = await fetch(`${API_CONFIG.baseUrl}/api/artists`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ artists: uncached.map(a => a.name) })
+        });
 
-            // Show which batch we're fetching
-            if (onProgress) {
-                onProgress({
-                    type: 'progress',
-                    current: processed,
-                    total: uncached.length,
-                    artist: `${batch[0].name}${batch.length > 1 ? ` +${batch.length - 1} more` : ''}`
-                });
-            }
+        if (!response.ok) {
+            throw new Error(`API error: ${response.status}`);
+        }
 
-            const response = await fetch(`${API_CONFIG.baseUrl}/api/artists`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    artists: batch.map(a => a.name)
-                })
-            });
+        // Read NDJSON stream — each line is one artist result
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
 
-            if (!response.ok) {
-                throw new Error(`API error: ${response.status}`);
-            }
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-            const data = await response.json();
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // keep incomplete line in buffer
 
-            // Process response and merge with artist data
-            for (const artist of batch) {
-                const locationData = data[artist.name] || {
-                    location_name: 'Unknown',
-                    location_coord: null
+            for (const line of lines) {
+                if (!line.trim()) continue;
+
+                const data = JSON.parse(line);
+                const artistName = data.artist;
+                const artist = uncachedByName[artistName];
+                if (!artist) continue;
+
+                const locationData = {
+                    location_name: data.location_name || 'Unknown',
+                    location_coord: data.location_coord || null
                 };
 
-                newLocations[artist.name] = locationData;
-
-                results.push({
-                    ...artist,
-                    ...locationData
-                });
-
+                newLocations[artistName] = locationData;
+                results.push({ ...artist, ...locationData });
                 processed++;
-            }
 
-            // Save batch to cache immediately
-            saveToCache(newLocations);
+                saveToCache({ [artistName]: locationData });
+
+                if (onProgress) {
+                    onProgress({
+                        type: 'progress',
+                        current: processed,
+                        total: uncached.length,
+                        artist: artistName
+                    });
+                }
+            }
         }
 
         if (onProgress) {
@@ -202,7 +213,7 @@ async function fetchArtistLocations(artists, onProgress = null) {
 
 /**
  * Fetch locations directly from browser (fallback, slower due to rate limits)
- * Uses MusicBrainz and Nominatim directly
+ * Uses shared location resolver module
  */
 async function fetchLocationsDirectly(artists, onProgress = null) {
     const cache = getCache();
@@ -235,33 +246,13 @@ async function fetchLocationsDirectly(artists, onProgress = null) {
         }
 
         try {
-            // Fetch from MusicBrainz (1 req/sec rate limit)
-            const location = await fetchFromMusicBrainz(artist.name);
+            // Use shared resolver
+            const locationData = await resolveArtistLocation(artist.name);
 
-            if (location) {
-                // Geocode the location using Nominatim
-                const coords = await geocodeLocation(location);
+            saveToCache({ [artist.name]: locationData });
+            results.push({ ...artist, ...locationData });
 
-                const locationData = {
-                    location_name: location,
-                    location_coord: coords
-                };
-
-                saveToCache({ [artist.name]: locationData });
-
-                results.push({
-                    ...artist,
-                    ...locationData
-                });
-            } else {
-                results.push({
-                    ...artist,
-                    location_name: 'Unknown',
-                    location_coord: null
-                });
-            }
-
-            // Rate limit: wait 1 second between requests
+            // Rate limit: wait between artists
             await new Promise(resolve => setTimeout(resolve, 1100));
 
         } catch (error) {
@@ -275,98 +266,6 @@ async function fetchLocationsDirectly(artists, onProgress = null) {
     }
 
     return results;
-}
-
-/**
- * Verify the returned artist name matches our search query
- */
-function verifyArtistMatch(searchName, resultName) {
-    const searchWords = searchName.toLowerCase().split(/\s+/);
-    const resultLower = resultName.toLowerCase();
-
-    let missingWords = 0;
-    for (const word of searchWords) {
-        if (!resultLower.includes(word) && !resultLower.includes(word.slice(0, -2))) {
-            missingWords++;
-        }
-    }
-
-    return (missingWords / searchWords.length) <= 0.4;
-}
-
-/**
- * Fetch artist location from MusicBrainz API
- */
-async function fetchFromMusicBrainz(artistName) {
-    const encodedName = encodeURIComponent(artistName);
-    const response = await fetch(
-        `https://musicbrainz.org/ws/2/artist/?query=artist:${encodedName}&limit=5&fmt=json`,
-        {
-            headers: {
-                'User-Agent': 'WhereAmIListening/2.0 (https://github.com/talidemestre/where-am-i-listening)'
-            }
-        }
-    );
-
-    if (!response.ok) {
-        throw new Error(`MusicBrainz API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    // Check multiple results to find the right artist
-    for (const artist of (data.artists || [])) {
-        // Verify score is high enough
-        if (artist.score < 70) {
-            continue;
-        }
-
-        // Verify name actually matches (prevents wrong artist matches)
-        const sortName = artist['sort-name'] || artist.name || '';
-        if (!verifyArtistMatch(artistName, sortName)) {
-            console.log(`Name mismatch for ${artistName}: got ${sortName}, skipping`);
-            continue;
-        }
-
-        console.log(`Matched ${artistName} to ${artist.name} (score: ${artist.score})`);
-
-        // Try begin-area first (more specific), then area
-        if (artist['begin-area']) {
-            return artist['begin-area'].name;
-        }
-        if (artist.area) {
-            return artist.area.name;
-        }
-    }
-
-    return null;
-}
-
-/**
- * Geocode a location name to coordinates using Nominatim
- */
-async function geocodeLocation(locationName) {
-    const encodedLocation = encodeURIComponent(locationName);
-    const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodedLocation}&format=json&limit=1`,
-        {
-            headers: {
-                'User-Agent': 'WhereAmIListening/2.0 (https://github.com/talidemestre/where-am-i-listening)'
-            }
-        }
-    );
-
-    if (!response.ok) {
-        throw new Error(`Nominatim API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    if (data && data.length > 0) {
-        return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
-    }
-
-    return null;
 }
 
 /**
@@ -384,7 +283,16 @@ function setApiBaseUrl(url) {
     API_CONFIG.baseUrl = url;
 }
 
-// Export for use in other modules
+// Export for ES modules
+export {
+    fetchArtistLocations,
+    fetchLocationsDirectly,
+    clearCache,
+    setApiBaseUrl,
+    getCache
+};
+
+// Export for use in inline scripts via window
 window.LocationAPI = {
     fetchArtistLocations,
     fetchLocationsDirectly,
