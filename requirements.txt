@@ -9,7 +9,7 @@ Deprecated==1.2.13
 Flask==2.0.2
 future==0.18.2
 geocoder==1.38.1
-gunicorn==20.1.0
+gunicorn==22.0.0
 html2text==2020.1.16
 idna==3.3
 importlib-metadata==4.8.2
