@@ -423,6 +423,7 @@ describe('fetchFromMusicBrainz', () => {
             artists: [{
                 name: 'Taylor Swift',
                 'sort-name': 'Swift, Taylor',
+                type: 'Person',
                 score: 100,
                 id: 'abc123',
                 'begin-area': { name: 'West Reading', id: 'area1', type: 'City' },
@@ -444,7 +445,8 @@ describe('fetchFromMusicBrainz', () => {
             areaId: 'area2',
             areaType: 'Country',
             mbid: 'abc123',
-            artistName: 'Taylor Swift'
+            artistName: 'Taylor Swift',
+            artistType: 'Person'
         });
     });
 

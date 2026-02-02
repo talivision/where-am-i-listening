@@ -14,6 +14,27 @@
 export const USER_AGENT = 'WhereAmIListening/2.0 (https://github.com/talidemestre/where-am-i-listening)';
 export const IS_PERSON_TYPE_ID = 'dd9886f2-1dfe-4270-97db-283f6839a666';
 
+// Detect browser environment - custom headers trigger CORS preflight which fails
+const IS_BROWSER = typeof window !== 'undefined';
+
+/**
+ * Get appropriate headers for API requests.
+ * In browsers, we avoid custom headers to prevent CORS preflight failures.
+ * User-Agent can't be set in browsers anyway (it's a forbidden header).
+ */
+function getHeaders(acceptType = null) {
+    if (IS_BROWSER) {
+        // Simple request - no preflight needed
+        return {};
+    }
+    // Worker/Node environment - full headers
+    const headers = { 'User-Agent': USER_AGENT };
+    if (acceptType) {
+        headers['Accept'] = acceptType;
+    }
+    return headers;
+}
+
 // ---------------------------------------------------------------------------
 // Rate-limited queue for API requests
 // ---------------------------------------------------------------------------
@@ -284,12 +305,7 @@ export async function fetchFromMusicBrainz(artistName) {
         const response = await rateLimiters.musicbrainz.execute(() =>
             fetchWithRetry(
                 `https://musicbrainz.org/ws/2/artist/?query=artist:${encodedName}&limit=5&fmt=json`,
-                {
-                    headers: {
-                        'User-Agent': USER_AGENT,
-                        'Accept': 'application/json'
-                    }
-                }
+                { headers: getHeaders('application/json') }
             )
         );
 
@@ -374,12 +390,7 @@ export async function resolveAreaContext(areaId, depth = 0) {
         const response = await rateLimiters.musicbrainz.execute(() =>
             fetchWithRetry(
                 `https://musicbrainz.org/ws/2/area/${areaId}?inc=area-rels&fmt=json`,
-                {
-                    headers: {
-                        'User-Agent': USER_AGENT,
-                        'Accept': 'application/json'
-                    }
-                }
+                { headers: getHeaders('application/json') }
             )
         );
 
@@ -446,12 +457,7 @@ export async function fetchLocationViaRelationships(mbid) {
         const response = await rateLimiters.musicbrainz.execute(() =>
             fetchWithRetry(
                 `https://musicbrainz.org/ws/2/artist/${mbid}?inc=artist-rels&fmt=json`,
-                {
-                    headers: {
-                        'User-Agent': USER_AGENT,
-                        'Accept': 'application/json'
-                    }
-                }
+                { headers: getHeaders('application/json') }
             )
         );
 
@@ -467,12 +473,7 @@ export async function fetchLocationViaRelationships(mbid) {
                 const personResponse = await rateLimiters.musicbrainz.execute(() =>
                     fetchWithRetry(
                         `https://musicbrainz.org/ws/2/artist/${personMbid}?fmt=json`,
-                        {
-                            headers: {
-                                'User-Agent': USER_AGENT,
-                                'Accept': 'application/json'
-                            }
-                        }
+                        { headers: getHeaders('application/json') }
                     )
                 );
 
@@ -514,7 +515,7 @@ export async function fetchFromWikipedia(searchQuery) {
         // Search Wikipedia for the page
         const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(searchQuery)}&format=json&origin=*`;
         const searchResponse = await rateLimiters.wikipedia.execute(() =>
-            fetch(searchUrl, { headers: { 'User-Agent': USER_AGENT } })
+            fetch(searchUrl, { headers: getHeaders() })
         );
 
         if (!searchResponse.ok) return null;
@@ -527,7 +528,7 @@ export async function fetchFromWikipedia(searchQuery) {
         // Get the page content with infobox data via parse API
         const parseUrl = `https://en.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(pageTitle)}&prop=wikitext&section=0&format=json&origin=*`;
         const parseResponse = await rateLimiters.wikipedia.execute(() =>
-            fetch(parseUrl, { headers: { 'User-Agent': USER_AGENT } })
+            fetch(parseUrl, { headers: getHeaders() })
         );
 
         if (!parseResponse.ok) return null;
@@ -583,12 +584,7 @@ export async function fetchFromWikidata(artistName) {
         const response = await rateLimiters.wikidata.execute(() =>
             fetch(
                 `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparql)}&format=json`,
-                {
-                    headers: {
-                        'User-Agent': USER_AGENT,
-                        'Accept': 'application/sparql-results+json'
-                    }
-                }
+                { headers: getHeaders('application/sparql-results+json') }
             )
         );
 
@@ -617,12 +613,7 @@ export async function fetchFromWikidata(artistName) {
         const bandResponse = await rateLimiters.wikidata.execute(() =>
             fetch(
                 `https://query.wikidata.org/sparql?query=${encodeURIComponent(bandSparql)}&format=json`,
-                {
-                    headers: {
-                        'User-Agent': USER_AGENT,
-                        'Accept': 'application/sparql-results+json'
-                    }
-                }
+                { headers: getHeaders('application/sparql-results+json') }
             )
         );
 
@@ -658,12 +649,7 @@ export async function fetchSubdivisionCapital(subdivisionName) {
         const response = await rateLimiters.wikidata.execute(() =>
             fetch(
                 `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparql)}&format=json`,
-                {
-                    headers: {
-                        'User-Agent': USER_AGENT,
-                        'Accept': 'application/sparql-results+json'
-                    }
-                }
+                { headers: getHeaders('application/sparql-results+json') }
             )
         );
 
@@ -718,7 +704,7 @@ export async function geocodeWithNominatim(query) {
         const response = await rateLimiters.nominatim.execute(() =>
             fetch(
                 `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&accept-language=en`,
-                { headers: { 'User-Agent': USER_AGENT } }
+                { headers: getHeaders() }
             )
         );
         if (!response.ok) return null;
@@ -745,7 +731,7 @@ export async function geocodeWithPhoton(query) {
         const response = await rateLimiters.photon.execute(() =>
             fetch(
                 `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1`,
-                { headers: { 'User-Agent': USER_AGENT } }
+                { headers: getHeaders() }
             )
         );
         console.log(`Photon response status: ${response.status}`);

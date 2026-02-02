@@ -59,9 +59,15 @@ function isWorkerConfigured() {
 }
 
 /**
- * Try to detect and use local worker if running
+ * Try to detect and use local worker if running.
+ * Only checks when running on localhost (development).
  */
 async function detectLocalWorker() {
+    // Skip detection on production - localhost worker won't be available
+    if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+        return null;
+    }
+
     try {
         const response = await fetch(`${API_CONFIG.localWorkerUrl}/health`, {
             method: 'GET',

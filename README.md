@@ -98,6 +98,8 @@ window.LocationAPI.setApiBaseUrl('http://localhost:8787')
 
 The app works without the Cloudflare Worker by calling MusicBrainz/Wikidata directly from the browser. This is slower due to rate limits (1 request/second) but requires no backend.
 
+**Note:** Local worker detection (`localhost:8787`) only runs when developing locally. On production (GitHub Pages), it skips straight to direct API calls.
+
 ## Configuration
 
 ### Spotify Client ID
