@@ -14,21 +14,24 @@ Visualize where your Spotify top artists come from on a 3D globe.
 ## Architecture
 
 ```
-static/                    # Static site (GitHub Pages)
-├── index.html          # Landing page with Spotify login
-├── callback.html       # OAuth callback handler
-├── globe.html          # Main globe visualization
+docs/                      # Static site (GitHub Pages)
+├── index.html             # Landing page with Spotify login
+├── callback.html          # OAuth callback handler
+├── globe.html             # Main globe visualization
 ├── js/
-│   ├── auth.js         # PKCE OAuth flow
-│   ├── spotify.js      # Spotify API client
-│   ├── api.js          # Worker API client
-│   └── globe.js        # Globe.gl visualization
+│   ├── auth.js            # PKCE OAuth flow
+│   ├── spotify.js         # Spotify API client
+│   ├── api.js             # Worker API client
+│   └── globe.js           # Globe.gl visualization
 └── css/
     └── styles.css
 
-worker/                  # Cloudflare Worker (optional backend)
-├── src/index.js        # Worker code
-├── wrangler.toml       # Cloudflare config
+shared/                    # Shared code (browser + worker)
+└── location-resolver.js   # Artist location lookup (MusicBrainz, Wikidata, geocoding)
+
+worker/                    # Cloudflare Worker (optional backend)
+├── src/index.js           # Worker code
+├── wrangler.toml          # Cloudflare config
 └── package.json
 ```
 
@@ -48,7 +51,7 @@ worker/                  # Cloudflare Worker (optional backend)
    - Note: Spotify allows HTTP only for loopback IPs (127.0.0.1), not localhost
 
 2. **Update the client ID** (if different):
-   - Edit `static/js/auth.js` and update `AUTH_CONFIG.clientId`
+   - Edit `docs/js/auth.js` and update `AUTH_CONFIG.clientId`
 
 3. **Install and run:**
    ```bash
@@ -75,7 +78,7 @@ window.LocationAPI.setApiBaseUrl('http://localhost:8787')
 
 ### GitHub Pages (Frontend)
 
-1. Rename `static/` to `docs/` or use GitHub Actions
+1. The frontend lives in `docs/` — point GitHub Pages at `master` branch `/docs` folder
 2. Go to repository Settings > Pages
 3. Set source to "Deploy from a branch"
 4. Select `master` branch and `/docs` folder (or root if using Actions)
@@ -92,7 +95,7 @@ window.LocationAPI.setApiBaseUrl('http://localhost:8787')
    ```
 4. Update `wrangler.toml` with the namespace ID
 5. Deploy: `npm run deploy:worker`
-6. Update `static/js/api.js` with your worker URL
+6. Update `docs/js/api.js` with your worker URL
 
 ### Pure Static Mode
 
@@ -104,7 +107,7 @@ The app works without the Cloudflare Worker by calling MusicBrainz/Wikidata dire
 
 ### Spotify Client ID
 
-Edit `static/js/auth.js`:
+Edit `docs/js/auth.js`:
 ```javascript
 const AUTH_CONFIG = {
     clientId: 'YOUR_SPOTIFY_CLIENT_ID',
@@ -114,7 +117,7 @@ const AUTH_CONFIG = {
 
 ### Worker URL
 
-Edit `static/js/api.js` or set at runtime:
+Edit `docs/js/api.js` or set at runtime:
 ```javascript
 window.LocationAPI.setApiBaseUrl('https://your-worker.workers.dev')
 ```
