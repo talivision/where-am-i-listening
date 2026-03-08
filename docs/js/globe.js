@@ -64,9 +64,6 @@ function aggregateArtistsByLocation(artists) {
 
     // Create aggregated location data
     return groups.map(group => {
-        // Sort by popularity
-        group.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
-
         // Use first artist's coords (they're all close anyway)
         const lat = group[0].location_coord[0];
         const lng = group[0].location_coord[1];
@@ -78,9 +75,7 @@ function aggregateArtistsByLocation(artists) {
             count: group.length,
             maxCount,
             // Use most common location name, or first one
-            locationName: group[0].location_name || 'Unknown',
-            // Average popularity for reference
-            avgPopularity: group.reduce((sum, a) => sum + (a.popularity || 0), 0) / group.length
+            locationName: group[0].location_name || 'Unknown'
         };
     });
 }
